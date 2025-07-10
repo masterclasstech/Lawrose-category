@@ -57,7 +57,7 @@ services:
   # Apache Kafka with Bitnami (KRaft mode)
   kafka:
     image: bitnami/kafka:3.6.0  # Updated to newer stable version
-    container_name: lawrose-kafka
+    container_name: lawrose-category-kafka
     restart: unless-stopped
     ports:
       - "9092:9092"  # External access
@@ -105,7 +105,7 @@ services:
   # Development Tools (Optional - only runs with dev profile)
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
-    container_name: lawrose-kafka-ui
+    container_name: lawrose-category-kafka-ui
     restart: unless-stopped
     ports:
       - "8080:8080"
