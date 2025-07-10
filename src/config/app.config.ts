@@ -33,6 +33,11 @@ export class AppConfig {
   @IsBoolean()
   @Transform(({ value }) => value === 'true' || value === true)
   @IsOptional()
+  enableSwaggerInProduction: boolean = false;
+
+  @IsBoolean()
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsOptional()
   enableKafka: boolean = true;
 
   @IsArray()
@@ -96,6 +101,17 @@ export class AppConfig {
   @Transform(({ value }) => parseInt(value, 10))
   @IsOptional()
   rateLimitWindow: number = 900000; // 15 minutes in milliseconds
+
+  /**
+   * Computed property that determines if Swagger should be enabled
+   * based on environment and production settings
+   */
+  get shouldEnableSwagger(): boolean {
+    if (this.nodeEnv === 'production') {
+      return this.enableSwaggerInProduction;
+    }
+    return this.enableSwagger;
+  }
 }
 
 export default registerAs('app', (): AppConfig => {
@@ -107,6 +123,7 @@ export default registerAs('app', (): AppConfig => {
   config.appVersion = process.env.APP_VERSION || '1.0.0';
   config.apiPrefix = process.env.API_PREFIX || 'api/v1';
   config.enableSwagger = process.env.ENABLE_SWAGGER === 'true' || config.nodeEnv === 'development';
+  config.enableSwaggerInProduction = process.env.ENABLE_SWAGGER_IN_PRODUCTION === 'true';
   config.enableKafka = process.env.ENABLE_KAFKA === 'true';
   config.allowedOrigins = process.env.ALLOWED_ORIGINS 
     ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
