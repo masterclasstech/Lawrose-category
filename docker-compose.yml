@@ -1,0 +1,142 @@
+version: '3.8'
+
+services:
+  # User Service Application
+  category-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: lawrose-category-service
+    restart: unless-stopped
+    ports:
+      - "8000:5000"  # Host port 3001 maps to container port 5000
+    env_file:
+      - .env
+    environment:
+      # Application environment - Use from .env file
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=5000
+      # Database connections
+      - MONGO_URL=${MONGO_URL}
+      - REDIS_URL=${REDIS_URL}
+      # Authentication
+      - JWT_SECRET=${JWT_SECRET}
+      # Email configuration
+      - EMAIL_PASS=${EMAIL_PASS}
+      - EMAIL_SERVICE=${EMAIL_SERVICE:-gmail}
+      - EMAIL_USER=${EMAIL_USER}
+      # Cloudinary configuration
+      - CLOUDINARY_NAME=${CLOUDINARY_NAME}
+      - CLOUDINARY_KEY=${CLOUDINARY_KEY}
+      - CLOUDINARY_SECRET=${CLOUDINARY_SECRET}
+      # Kafka configuration
+      - KAFKA_BROKERS=${KAFKA_BROKERS:-kafka:9092}
+      - KAFKA_CLIENT_ID=${KAFKA_CLIENT_ID:-LawCategory}
+      - KAFKA_GROUP_ID=${KAFKA_GROUP_ID:-LawCategory-group}
+      # Connection logging flags
+      - LOG_DB_CONNECTION=true
+      - LOG_REDIS_CONNECTION=true
+      - LOG_KAFKA_CONNECTION=true
+      # Enable Swagger explicitly
+      - ENABLE_SWAGGER=true
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - lawrose-network
+    volumes:
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Apache Kafka with Bitnami (KRaft mode)
+  kafka:
+    image: bitnami/kafka:3.6.0  # Updated to newer stable version
+    container_name: lawrose-kafka
+    restart: unless-stopped
+    ports:
+      - "9092:9092"  # External access
+      - "9093:9093"  # Controller port
+    environment:
+      # KRaft settings (replaces Zookeeper)
+      - KAFKA_ENABLE_KRAFT=yes
+      - KAFKA_CFG_PROCESS_ROLES=broker,controller
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092  # For internal Docker communication
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka:9093  # Fixed to use kafka hostname
+      - KAFKA_CFG_NODE_ID=1
+      - KAFKA_KRAFT_CLUSTER_ID=MkU3OEVBNTcwNTJENDM2Qk
+      # General Kafka settings
+      - KAFKA_BROKER_ID=1
+      - ALLOW_PLAINTEXT_LISTENER=yes
+      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=true
+      - KAFKA_CFG_DELETE_TOPIC_ENABLE=true
+      - KAFKA_CFG_LOG_RETENTION_HOURS=168
+      - KAFKA_CFG_LOG_SEGMENT_BYTES=1073741824
+      - KAFKA_CFG_LOG_RETENTION_CHECK_INTERVAL_MS=300000
+      - KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+      - KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR=1
+      - KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1
+      - KAFKA_CFG_GROUP_INITIAL_REBALANCE_DELAY_MS=0
+      # Performance optimizations
+      - KAFKA_CFG_NUM_NETWORK_THREADS=8
+      - KAFKA_CFG_NUM_IO_THREADS=8
+      - KAFKA_CFG_SOCKET_SEND_BUFFER_BYTES=102400
+      - KAFKA_CFG_SOCKET_RECEIVE_BUFFER_BYTES=102400
+      - KAFKA_CFG_SOCKET_REQUEST_MAX_BYTES=104857600
+    volumes:
+      - kafka_data:/bitnami/kafka
+    networks:
+      - lawrose-network
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  # Development Tools (Optional - only runs with dev profile)
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: lawrose-kafka-ui
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=lawrose-local
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:9092
+      - DYNAMIC_CONFIG_ENABLED=true
+      - LOGGING_LEVEL_ROOT=INFO
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - lawrose-network
+    profiles:
+      - dev
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+networks:
+  lawrose-network:
+    driver: bridge
+    name: lawrose-network
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  kafka_data:
+    name: lawrose_kafka_data
+    driver: local
