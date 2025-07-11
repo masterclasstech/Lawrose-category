@@ -1,6 +1,6 @@
 /* eslint-disable prettier/prettier */
 import { registerAs } from '@nestjs/config';
-import { IsString, IsNumber, IsBoolean, IsOptional, IsArray } from 'class-validator';
+import { IsString, IsNumber, IsOptional, IsArray } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 
 export class AppConfig {
@@ -25,120 +25,115 @@ export class AppConfig {
   @IsOptional()
   apiPrefix: string = 'api/v1';
 
-  @IsBoolean()
-  @Transform(({ value }) => value === 'true' || value === true)
-  @IsOptional()
-  enableSwagger: boolean = true;
-
-  @IsBoolean()
-  @Transform(({ value }) => value === 'true' || value === true)
-  @IsOptional()
-  enableSwaggerInProduction: boolean = false;
-
-  @IsBoolean()
-  @Transform(({ value }) => value === 'true' || value === true)
-  @IsOptional()
-  enableKafka: boolean = true;
-
   @IsArray()
   @Transform(({ value }) => value ? value.split(',').map((origin: string) => origin.trim()) : [])
   @IsOptional()
-  allowedOrigins: string[] = ['http://localhost:5000', 'http://localhost:8000'];
+  allowedOrigins: string[] = ['http://localhost:3000', 'http://localhost:5000'];
 
-  @IsBoolean()
-  @Transform(({ value }) => value === 'true' || value === true)
-  @IsOptional()
-  logDbConnection: boolean = true;
-
-  @IsBoolean()
-  @Transform(({ value }) => value === 'true' || value === true)
-  @IsOptional()
-  logRedisConnection: boolean = true;
-
-  @IsBoolean()
-  @Transform(({ value }) => value === 'true' || value === true)
-  @IsOptional()
-  logKafkaConnection: boolean = true;
-
-  @IsString()
-  @IsOptional()
+  // All other properties with defaults - no validation needed
   timezone: string = 'UTC';
-
-  @IsNumber()
-  @Type(() => Number)
-  @Transform(({ value }) => parseInt(value, 10))
-  @IsOptional()
-  requestTimeout: number = 30000; // 30 seconds
-
-  @IsNumber()
-  @Type(() => Number)
-  @Transform(({ value }) => parseInt(value, 10))
-  @IsOptional()
-  maxFileSize: number = 10485760; // 10MB
-
-  @IsString()
-  @IsOptional()
-  logLevel: string = 'info';
-
-  @IsBoolean()
-  @Transform(({ value }) => value === 'true' || value === true)
-  @IsOptional()
+  enableSwagger: boolean = true;
+  enableSwaggerInProduction: boolean = false;
+  enableKafka: boolean = false;
   enableCors: boolean = true;
-
-  @IsBoolean()
-  @Transform(({ value }) => value === 'true' || value === true)
-  @IsOptional()
   enableRateLimit: boolean = true;
+  rateLimitMax: number = 100;
+  rateLimitWindow: number = 900000;
+  requestTimeout: number = 30000;
+  maxFileSize: number = 10485760;
+  logLevel: string = 'info';
+  logDbConnection: boolean = false;
+  logRedisConnection: boolean = false;
+  logKafkaConnection: boolean = false;
 
-  @IsNumber()
-  @Type(() => Number)
-  @Transform(({ value }) => parseInt(value, 10))
-  @IsOptional()
-  rateLimitMax: number = 100; // requests per window
-
-  @IsNumber()
-  @Type(() => Number)
-  @Transform(({ value }) => parseInt(value, 10))
-  @IsOptional()
-  rateLimitWindow: number = 900000; // 15 minutes in milliseconds
-
-  /**
-   * Computed property that determines if Swagger should be enabled
-   * based on environment and production settings
-   */
   get shouldEnableSwagger(): boolean {
     if (this.nodeEnv === 'production') {
       return this.enableSwaggerInProduction;
     }
     return this.enableSwagger;
   }
+
+  get isDevelopment(): boolean {
+    return this.nodeEnv === 'development';
+  }
+
+  get isProduction(): boolean {
+    return this.nodeEnv === 'production';
+  }
+
+  get isTest(): boolean {
+    return this.nodeEnv === 'test';
+  }
 }
 
 export default registerAs('app', (): AppConfig => {
   const config = new AppConfig();
   
-  config.nodeEnv = process.env.NODE_ENV || 'development';
-  config.port = parseInt(process.env.PORT, 10) || 5000;
-  config.appName = process.env.APP_NAME || 'Category Service';
-  config.appVersion = process.env.APP_VERSION || '1.0.0';
-  config.apiPrefix = process.env.API_PREFIX || 'api/v1';
-  config.enableSwagger = process.env.ENABLE_SWAGGER === 'true' || config.nodeEnv === 'development';
-  config.enableSwaggerInProduction = process.env.ENABLE_SWAGGER_IN_PRODUCTION === 'true';
-  config.enableKafka = process.env.ENABLE_KAFKA === 'true';
-  config.allowedOrigins = process.env.ALLOWED_ORIGINS 
-    ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
-    : ['http://localhost:5000', 'http://localhost:8000'];
-  config.logDbConnection = process.env.LOG_DB_CONNECTION === 'true';
-  config.logRedisConnection = process.env.LOG_REDIS_CONNECTION === 'true';
-  config.logKafkaConnection = process.env.LOG_KAFKA_CONNECTION === 'true';
-  config.timezone = process.env.TIMEZONE || 'UTC';
-  config.requestTimeout = parseInt(process.env.REQUEST_TIMEOUT, 10) || 30000;
-  config.maxFileSize = parseInt(process.env.MAX_FILE_SIZE, 10) || 10485760;
-  config.logLevel = process.env.LOG_LEVEL || 'info';
-  config.enableCors = process.env.ENABLE_CORS !== 'false';
-  config.enableRateLimit = process.env.ENABLE_RATE_LIMIT !== 'false';
-  config.rateLimitMax = parseInt(process.env.RATE_LIMIT_MAX, 10) || 100;
-  config.rateLimitWindow = parseInt(process.env.RATE_LIMIT_WINDOW, 10) || 900000;
+  // Core settings
+  if (process.env.NODE_ENV) {
+    config.nodeEnv = process.env.NODE_ENV;
+  }
+  if (process.env.PORT && !isNaN(Number(process.env.PORT))) {
+    config.port = parseInt(process.env.PORT, 10);
+  }
+  if (process.env.APP_NAME) {
+    config.appName = process.env.APP_NAME;
+  }
+  if (process.env.APP_VERSION) {
+    config.appVersion = process.env.APP_VERSION;
+  }
+  if (process.env.API_PREFIX) {
+    config.apiPrefix = process.env.API_PREFIX;
+  }
+
+  // Feature flags
+  if (process.env.ENABLE_SWAGGER === 'false') {
+    config.enableSwagger = false;
+  }
+  if (process.env.ENABLE_SWAGGER_IN_PRODUCTION === 'true') {
+    config.enableSwaggerInProduction = true;
+  }
+  if (process.env.ENABLE_KAFKA === 'true') {
+    config.enableKafka = true;
+  }
+  if (process.env.ENABLE_CORS === 'false') {
+    config.enableCors = false;
+  }
+
+  // CORS origins
+  if (process.env.ALLOWED_ORIGINS) {
+    config.allowedOrigins = process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim());
+  }
+
+  // Rate limiting
+  if (process.env.RATE_LIMIT_MAX && !isNaN(Number(process.env.RATE_LIMIT_MAX))) {
+    config.rateLimitMax = parseInt(process.env.RATE_LIMIT_MAX, 10);
+  }
+  if (process.env.RATE_LIMIT_WINDOW && !isNaN(Number(process.env.RATE_LIMIT_WINDOW))) {
+    config.rateLimitWindow = parseInt(process.env.RATE_LIMIT_WINDOW, 10);
+  }
+
+  // Request settings
+  if (process.env.REQUEST_TIMEOUT && !isNaN(Number(process.env.REQUEST_TIMEOUT))) {
+    config.requestTimeout = parseInt(process.env.REQUEST_TIMEOUT, 10);
+  }
+  if (process.env.MAX_FILE_SIZE && !isNaN(Number(process.env.MAX_FILE_SIZE))) {
+    config.maxFileSize = parseInt(process.env.MAX_FILE_SIZE, 10);
+  }
+
+  // Logging
+  if (process.env.LOG_LEVEL) {
+    config.logLevel = process.env.LOG_LEVEL;
+  }
+  if (process.env.LOG_DB_CONNECTION === 'true') {
+    config.logDbConnection = true;
+  }
+  if (process.env.LOG_REDIS_CONNECTION === 'true') {
+    config.logRedisConnection = true;
+  }
+  if (process.env.LOG_KAFKA_CONNECTION === 'true') {
+    config.logKafkaConnection = true;
+  }
 
   return config;
 });

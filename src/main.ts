@@ -31,6 +31,11 @@ async function bootstrap() {
     const appConfig = configService.get<AppConfig>('app');
     const swaggerConfig = configService.get<SwaggerConfig>('swagger');
 
+    // Validate required config
+    if (!appConfig) {
+      throw new Error('App configuration is not available');
+    }
+
     // Security middleware
     app.use(helmet({
       contentSecurityPolicy: {
@@ -52,9 +57,10 @@ async function bootstrap() {
     // Compression middleware
     app.use(compression());
 
-    // Body parsing middleware
-    app.use(json({ limit: '10mb' }));
-    app.use(urlencoded({ extended: true, limit: '10mb' }));
+    // Body parsing middleware with configurable limits
+    const maxFileSize = `${Math.round(appConfig.maxFileSize / 1024 / 1024)}mb`;
+    app.use(json({ limit: maxFileSize }));
+    app.use(urlencoded({ extended: true, limit: maxFileSize }));
 
     // Global prefix
     app.setGlobalPrefix(appConfig.apiPrefix);
@@ -143,204 +149,20 @@ async function bootstrap() {
       new TransformInterceptor(reflector),
     );
 
-    // Kafka microservice setup
-    const kafkaConfig = configService.get('kafka');
-    if (kafkaConfig?.enabled) {
-      const microserviceOptions: MicroserviceOptions = {
-        transport: Transport.KAFKA,
-        options: {
-          client: {
-            clientId: kafkaConfig.clientId,
-            brokers: kafkaConfig.brokers,
-            ssl: kafkaConfig.ssl,
-            sasl: kafkaConfig.sasl,
-            connectionTimeout: kafkaConfig.connectionTimeout,
-            requestTimeout: kafkaConfig.requestTimeout,
-            retry: kafkaConfig.retry,
-          },
-          consumer: {
-            groupId: kafkaConfig.consumer.groupId,
-            allowAutoTopicCreation: kafkaConfig.consumer.allowAutoTopicCreation,
-            sessionTimeout: kafkaConfig.consumer.sessionTimeout,
-            heartbeatInterval: kafkaConfig.consumer.heartbeatInterval,
-            maxBytesPerPartition: kafkaConfig.consumer.maxBytesPerPartition,
-            maxBytes: kafkaConfig.consumer.maxBytes,
-            maxWaitTimeInMs: kafkaConfig.consumer.maxWaitTimeInMs,
-          },
-          producer: {
-            allowAutoTopicCreation: kafkaConfig.producer.allowAutoTopicCreation,
-            maxInFlightRequests: kafkaConfig.producer.maxInFlightRequests,
-            idempotent: kafkaConfig.producer.idempotent,
-            transactionTimeout: kafkaConfig.producer.transactionTimeout,
-          },
-        },
-      };
+    // Health check endpoints
+    setupHealthEndpoints(app, appConfig, configService, logger);
 
-      app.connectMicroservice(microserviceOptions);
-      
-      logger.log(`Kafka microservice configured with brokers: ${kafkaConfig.brokers.join(', ')}`);
-    }
+    // Kafka microservice setup
+    await setupKafkaMicroservice(app, configService, appConfig, logger);
 
     // Swagger/OpenAPI configuration
-    if (swaggerConfig && (appConfig.nodeEnv === 'development' || appConfig.enableSwaggerInProduction)) {
-      const documentBuilder = new DocumentBuilder()
-        .setTitle(swaggerConfig.title)
-        .setDescription(swaggerConfig.description)
-        .setVersion(swaggerConfig.version)
-        .setTermsOfService(swaggerConfig.termsOfService)
-        .setContact(
-          swaggerConfig.contactName,
-          swaggerConfig.contactUrl,
-          swaggerConfig.contactEmail,
-        )
-        .setLicense(swaggerConfig.licenseName, swaggerConfig.licenseUrl)
-        .setExternalDoc(swaggerConfig.externalDocsDescription, swaggerConfig.externalDocsUrl);
-
-      // Add servers
-      swaggerConfig.servers.forEach(server => {
-        documentBuilder.addServer(server);
-      });
-
-      // Add tags
-      swaggerConfig.tags.forEach(tag => {
-        documentBuilder.addTag(tag);
-      });
-
-      // Add security schemes
-      if (swaggerConfig.enableApiKey) {
-        documentBuilder.addApiKey(
-          {
-            type: 'apiKey',
-            name: swaggerConfig.apiKeyName,
-            in: swaggerConfig.apiKeyLocation as 'header' | 'query' | 'cookie',
-            description: 'API Key for authentication',
-          },
-          'api-key',
-        );
-      }
-
-      if (swaggerConfig.enableBearerAuth) {
-        documentBuilder.addBearerAuth(
-          {
-            type: 'http',
-            scheme: swaggerConfig.bearerScheme,
-            bearerFormat: swaggerConfig.bearerFormat,
-            description: 'JWT Bearer token for authentication',
-          },
-          'bearer-token',
-        );
-      }
-
-      if (swaggerConfig.enableOAuth2) {
-        documentBuilder.addOAuth2(
-          {
-            type: 'oauth2',
-            flows: {
-              authorizationCode: {
-                authorizationUrl: swaggerConfig.oauth2AuthorizationUrl,
-                tokenUrl: swaggerConfig.oauth2TokenUrl,
-                scopes: swaggerConfig.oauth2Scopes.reduce((acc, scope) => {
-                  acc[scope] = `${scope} access`;
-                  return acc;
-                }, {} as Record<string, string>),
-              },
-            },
-            description: 'OAuth2 authentication',
-          },
-          'oauth2',
-        );
-      }
-
-      if (swaggerConfig.enableCookieAuth) {
-        documentBuilder.addCookieAuth(swaggerConfig.cookieName, {
-          type: 'apiKey',
-          in: 'cookie',
-          name: swaggerConfig.cookieName,
-          description: 'Cookie-based authentication',
-        });
-      }
-
-      if (swaggerConfig.enableBasicAuth) {
-        documentBuilder.addBasicAuth(
-          {
-            type: 'http',
-            scheme: 'basic',
-            description: 'Basic HTTP authentication',
-          },
-          'basic-auth',
-        );
-      }
-
-      const document = SwaggerModule.createDocument(app, documentBuilder.build());
-
-      // Swagger UI options
-      const swaggerOptions = {
-        explorer: swaggerConfig.enableExplorer,
-        swaggerOptions: {
-          docExpansion: swaggerConfig.docExpansion,
-          filter: swaggerConfig.enableFilter,
-          showRequestDuration: swaggerConfig.enableDisplayRequestDuration,
-          showExtensions: swaggerConfig.enableShowExtensions,
-          showCommonExtensions: swaggerConfig.enableShowCommonExtensions,
-          deepLinking: swaggerConfig.enableDeepLinking,
-          displayOperationId: swaggerConfig.enableDisplayOperationId,
-          defaultModelsExpandDepth: swaggerConfig.defaultModelsExpandDepth,
-          defaultModelExpandDepth: swaggerConfig.defaultModelExpandDepth,
-          defaultModelRendering: swaggerConfig.defaultModelRendering,
-          displayRequestDuration: swaggerConfig.enableDisplayRequestDuration,
-          operationsSorter: swaggerConfig.operationsSorter,
-          tagsSorter: swaggerConfig.tagsSorter,
-          tryItOutEnabled: swaggerConfig.enableTryItOutEnabled,
-          requestSnippetsEnabled: swaggerConfig.enableRequestSnippetsEnabled,
-          persistAuthorization: swaggerConfig.enablePersistAuthorization,
-          maxDisplayedTags: swaggerConfig.enableMaxDisplayedTags ? swaggerConfig.maxDisplayedTags : undefined,
-          useUnsafeMarkdown: swaggerConfig.enableUseUnsafeMarkdown,
-          syntaxHighlight: swaggerConfig.enableSyntaxHighlight ? {
-            theme: swaggerConfig.syntaxHighlightTheme,
-          } : false,
-          supportedSubmitMethods: swaggerConfig.enableSupportedSubmitMethods 
-            ? swaggerConfig.supportedSubmitMethods 
-            : undefined,
-          validatorUrl: swaggerConfig.enableValidatorUrl ? swaggerConfig.validatorUrl : null,
-          queryConfigEnabled: swaggerConfig.enableQueryConfigEnabled,
-          onComplete: swaggerConfig.enableOnComplete ? () => {
-            logger.log('Swagger UI loaded successfully');
-          } : undefined,
-          presets: swaggerConfig.enablePresetEnv ? [swaggerConfig.presetEnv] : undefined,
-        },
-        customCss: swaggerConfig.customCss,
-        customJs: swaggerConfig.customJs,
-        customfavIcon: swaggerConfig.customfavIcon,
-        customSiteTitle: swaggerConfig.customSiteTitle,
-        swaggerUrl: swaggerConfig.swaggerUrl,
-        customCssUrl: swaggerConfig.customCssUrl,
-        customJsUrl: swaggerConfig.customJsUrl,
-        jsonEditor: swaggerConfig.enableJsonEditor,
-      };
-
-      SwaggerModule.setup(swaggerConfig.path, app, document, swaggerOptions);
-      
-      logger.log(`Swagger documentation available at: http://localhost:${appConfig.port}/${swaggerConfig.path}`);
-    }
+    setupSwaggerDocumentation(app, appConfig, swaggerConfig, logger);
 
     // Graceful shutdown handlers
-    const gracefulShutdown = (signal: string) => {
-      logger.log(`Received ${signal}, shutting down gracefully...`);
-      
-      app.close().then(() => {
-        logger.log('Application closed successfully');
-        process.exit(0);
-      }).catch((error) => {
-        logger.error('Error during shutdown:', error);
-        process.exit(1);
-      });
-    };
-
-    process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-    process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+    setupGracefulShutdown(app, logger);
 
     // Start microservices if enabled
-    if (kafkaConfig?.enabled) {
+    if (appConfig.enableKafka) {
       await app.startAllMicroservices();
       logger.log('Kafka microservices started successfully');
     }
@@ -348,20 +170,349 @@ async function bootstrap() {
     // Start HTTP server
     await app.listen(appConfig.port);
     
-    logger.log(`Category Service is running on: http://localhost:${appConfig.port}${appConfig.apiPrefix}`);
-    logger.log(`Environment: ${appConfig.nodeEnv}`);
-    logger.log(`API Documentation: http://localhost:${appConfig.port}/${swaggerConfig?.path || 'api/docs'}`);
-    logger.log(`Health Check: http://localhost:${appConfig.port}${appConfig.apiPrefix}/health`);
-    
-    if (kafkaConfig?.enabled) {
-      logger.log(`📡 Kafka Client ID: ${kafkaConfig.clientId}`);
-      logger.log(`🔌 Kafka Brokers: ${kafkaConfig.brokers.join(', ')}`);
-    }
+    logApplicationStartup(appConfig, swaggerConfig, logger, configService);
 
   } catch (error) {
     logger.error('Failed to start the application:', error);
     process.exit(1);
   }
+}
+
+function setupHealthEndpoints(app: any, appConfig: AppConfig, configService: any, logger: Logger) {
+  const httpAdapter = app.getHttpAdapter();
+  const healthEndpoint = `${appConfig.apiPrefix}/health`;
+  
+  // Comprehensive health check endpoint
+  httpAdapter.get(healthEndpoint, async (req, res) => {
+    try {
+      const startTime = Date.now();
+      const healthData = {
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        service: appConfig.appName,
+        version: appConfig.appVersion,
+        environment: appConfig.nodeEnv,
+        uptime: process.uptime(),
+        memory: {
+          used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+          total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024),
+          external: Math.round(process.memoryUsage().external / 1024 / 1024),
+        },
+        dependencies: {
+          database: 'unknown',
+          redis: 'unknown',
+          kafka: 'unknown',
+        },
+        configuration: {
+          cors: appConfig.enableCors,
+          kafka: appConfig.enableKafka,
+          swagger: appConfig.shouldEnableSwagger,
+        },
+      };
+
+      // Check database connection
+      if (appConfig.logDbConnection) {
+        try {
+          const connection = app.get('DatabaseConnection', { strict: false });
+          healthData.dependencies.database = connection?.readyState === 1 ? 'ok' : 'disconnected';
+        } catch {
+          healthData.dependencies.database = 'error';
+        }
+      }
+
+      // Check Redis connection
+      if (appConfig.logRedisConnection) {
+        try {
+          const redisService = app.get('RedisService', { strict: false });
+          healthData.dependencies.redis = redisService?.status === 'ready' ? 'ok' : 'disconnected';
+        } catch {
+          healthData.dependencies.redis = 'error';
+        }
+      }
+
+      // Check Kafka connection
+      if (appConfig.enableKafka && appConfig.logKafkaConnection) {
+        try {
+          const kafkaService = app.get('KafkaService', { strict: false });
+          healthData.dependencies.kafka = kafkaService?.isConnected() ? 'ok' : 'disconnected';
+        } catch {
+          healthData.dependencies.kafka = 'error';
+        }
+      } else {
+        healthData.dependencies.kafka = appConfig.enableKafka ? 'enabled' : 'disabled';
+      }
+
+      const responseTime = Date.now() - startTime;
+      
+      res.status(200).json({
+        ...healthData,
+        responseTime: `${responseTime}ms`,
+      });
+    } catch (error) {
+      logger.error('Health check failed:', error);
+      res.status(503).json({
+        status: 'error',
+        timestamp: new Date().toISOString(),
+        service: appConfig.appName,
+        version: appConfig.appVersion,
+        environment: appConfig.nodeEnv,
+        error: error.message,
+      });
+    }
+  });
+
+  // Simple health check endpoint
+  httpAdapter.get('/health', async (req, res) => {
+    res.status(200).json({
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      service: appConfig.appName,
+      version: appConfig.appVersion,
+    });
+  });
+}
+
+async function setupKafkaMicroservice(app: any, configService: any, appConfig: AppConfig, logger: Logger) {
+  if (!appConfig.enableKafka) {
+    return;
+  }
+
+  const kafkaConfig = configService.get('kafka');
+  if (!kafkaConfig?.enabled) {
+    logger.warn('Kafka is enabled in app config but Kafka configuration is missing or disabled');
+    return;
+  }
+
+  const microserviceOptions: MicroserviceOptions = {
+    transport: Transport.KAFKA,
+    options: {
+      client: {
+        clientId: kafkaConfig.clientId,
+        brokers: kafkaConfig.brokers,
+        ssl: kafkaConfig.ssl,
+        sasl: kafkaConfig.sasl,
+        connectionTimeout: kafkaConfig.connectionTimeout,
+        requestTimeout: kafkaConfig.requestTimeout,
+        retry: kafkaConfig.retry,
+      },
+      consumer: {
+        groupId: kafkaConfig.consumer.groupId,
+        allowAutoTopicCreation: kafkaConfig.consumer.allowAutoTopicCreation,
+        sessionTimeout: kafkaConfig.consumer.sessionTimeout,
+        heartbeatInterval: kafkaConfig.consumer.heartbeatInterval,
+        maxBytesPerPartition: kafkaConfig.consumer.maxBytesPerPartition,
+        maxBytes: kafkaConfig.consumer.maxBytes,
+        maxWaitTimeInMs: kafkaConfig.consumer.maxWaitTimeInMs,
+      },
+      producer: {
+        allowAutoTopicCreation: kafkaConfig.producer.allowAutoTopicCreation,
+        maxInFlightRequests: kafkaConfig.producer.maxInFlightRequests,
+        idempotent: kafkaConfig.producer.idempotent,
+        transactionTimeout: kafkaConfig.producer.transactionTimeout,
+      },
+    },
+  };
+
+  app.connectMicroservice(microserviceOptions);
+  
+  if (appConfig.logKafkaConnection) {
+    logger.log(`Kafka microservice configured with brokers: ${kafkaConfig.brokers.join(', ')}`);
+  }
+}
+
+function setupSwaggerDocumentation(app: any, appConfig: AppConfig, swaggerConfig: any, logger: Logger) {
+  if (!appConfig.shouldEnableSwagger || !swaggerConfig) {
+    return;
+  }
+
+  const documentBuilder = new DocumentBuilder()
+    .setTitle(swaggerConfig.title)
+    .setDescription(swaggerConfig.description)
+    .setVersion(swaggerConfig.version)
+    .setContact(
+      swaggerConfig.contactName,
+      swaggerConfig.contactUrl,
+      swaggerConfig.contactEmail,
+    )
+    .setLicense(swaggerConfig.licenseName, swaggerConfig.licenseUrl)
+    .setExternalDoc(swaggerConfig.externalDocsDescription, swaggerConfig.externalDocsUrl);
+
+  // Add servers
+  swaggerConfig.servers?.forEach(server => {
+    documentBuilder.addServer(server);
+  });
+
+  // Add tags
+  swaggerConfig.tags?.forEach(tag => {
+    documentBuilder.addTag(tag);
+  });
+
+  // Add security schemes
+  if (swaggerConfig.enableApiKey) {
+    documentBuilder.addApiKey(
+      {
+        type: 'apiKey',
+        name: swaggerConfig.apiKeyName,
+        in: 'header' as 'header' | 'query' | 'cookie',
+        description: 'API Key for authentication',
+      },
+      'api-key',
+    );
+  }
+
+  if (swaggerConfig.enableBearerAuth) {
+    documentBuilder.addBearerAuth(
+      {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: swaggerConfig.bearerFormat,
+        description: 'JWT Bearer token for authentication',
+      },
+      'bearer-token',
+    );
+  }
+
+  const document = SwaggerModule.createDocument(app, documentBuilder.build());
+
+  // Add health check endpoint to Swagger
+  addHealthCheckToSwagger(document, appConfig);
+
+  const swaggerOptions = {
+    explorer: swaggerConfig.enableExplorer,
+    swaggerOptions: {
+      docExpansion: swaggerConfig.docExpansion,
+      filter: swaggerConfig.enableFilter,
+      defaultModelsExpandDepth: swaggerConfig.defaultModelsExpandDepth,
+      defaultModelRendering: swaggerConfig.defaultModelRendering,
+      operationsSorter: swaggerConfig.operationsSorter,
+      tagsSorter: swaggerConfig.tagsSorter,
+      tryItOutEnabled: swaggerConfig.enableTryItOut,
+    },
+    customCss: swaggerConfig.customCss,
+    customSiteTitle: swaggerConfig.customSiteTitle,
+    customfavIcon: swaggerConfig.customFavIcon,
+  };
+
+  SwaggerModule.setup(swaggerConfig.path, app, document, swaggerOptions);
+  
+  logger.log(`Swagger documentation available at: http://localhost:${appConfig.port}/${swaggerConfig.path}`);
+}
+
+function addHealthCheckToSwagger(document: any, appConfig: AppConfig) {
+  document.paths['/health'] = {
+    get: {
+      tags: ['Health'],
+      summary: 'Health Check',
+      description: 'Check the health status of the service',
+      responses: {
+        '200': {
+          description: 'Service is healthy',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  status: { type: 'string', example: 'ok' },
+                  timestamp: { type: 'string', format: 'date-time' },
+                  service: { type: 'string', example: appConfig.appName },
+                  version: { type: 'string', example: appConfig.appVersion },
+                  environment: { type: 'string', example: appConfig.nodeEnv },
+                  uptime: { type: 'number', example: 3600 },
+                  memory: {
+                    type: 'object',
+                    properties: {
+                      used: { type: 'number', example: 50 },
+                      total: { type: 'number', example: 100 },
+                      external: { type: 'number', example: 10 },
+                    },
+                  },
+                  dependencies: {
+                    type: 'object',
+                    properties: {
+                      database: { type: 'string', example: 'ok' },
+                      redis: { type: 'string', example: 'ok' },
+                      kafka: { type: 'string', example: 'ok' },
+                    },
+                  },
+                  configuration: {
+                    type: 'object',
+                    properties: {
+                      cors: { type: 'boolean', example: appConfig.enableCors },
+                      kafka: { type: 'boolean', example: appConfig.enableKafka },
+                      swagger: { type: 'boolean', example: appConfig.shouldEnableSwagger },
+                    },
+                  },
+                  responseTime: { type: 'string', example: '5ms' },
+                },
+              },
+            },
+          },
+        },
+        '503': {
+          description: 'Service is unhealthy',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  status: { type: 'string', example: 'error' },
+                  timestamp: { type: 'string', format: 'date-time' },
+                  service: { type: 'string', example: appConfig.appName },
+                  version: { type: 'string', example: appConfig.appVersion },
+                  environment: { type: 'string', example: appConfig.nodeEnv },
+                  error: { type: 'string', example: 'Database connection failed' },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  };
+}
+
+function setupGracefulShutdown(app: any, logger: Logger) {
+  const gracefulShutdown = (signal: string) => {
+    logger.log(`Received ${signal}, shutting down gracefully...`);
+    
+    app.close().then(() => {
+      logger.log('Application closed successfully');
+      process.exit(0);
+    }).catch((error) => {
+      logger.error('Error during shutdown:', error);
+      process.exit(1);
+    });
+  };
+
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+}
+
+function logApplicationStartup(appConfig: AppConfig, swaggerConfig: any, logger: Logger, configService: ConfigService) {
+  logger.log(`${appConfig.appName} v${appConfig.appVersion} is running on: http://localhost:${appConfig.port}${appConfig.apiPrefix}`);
+  logger.log(`Environment: ${appConfig.nodeEnv}`);
+  logger.log(`Health Check: http://localhost:${appConfig.port}${appConfig.apiPrefix}/health`);
+  logger.log(`Simple Health Check: http://localhost:${appConfig.port}/health`);
+  
+  if (appConfig.shouldEnableSwagger && swaggerConfig) {
+    logger.log(`API Documentation: http://localhost:${appConfig.port}/${swaggerConfig.path}`);
+  }
+  
+  if (appConfig.enableKafka) {
+    const kafkaConfig = configService.get('kafka');
+    if (kafkaConfig?.enabled && appConfig.logKafkaConnection) {
+      logger.log(`📡 Kafka Client ID: ${kafkaConfig.clientId}`);
+      logger.log(`🔌 Kafka Brokers: ${kafkaConfig.brokers.join(', ')}`);
+    }
+  }
+
+  // Configuration summary
+  logger.log(`🔧 Configuration Summary:`);
+  logger.log(`  - CORS: ${appConfig.enableCors ? 'Enabled' : 'Disabled'}`);
+  logger.log(`  - Kafka: ${appConfig.enableKafka ? 'Enabled' : 'Disabled'}`);
+  logger.log(`  - Swagger: ${appConfig.shouldEnableSwagger ? 'Enabled' : 'Disabled'}`);
+  logger.log(`  - Max File Size: ${Math.round(appConfig.maxFileSize / 1024 / 1024)}MB`);
+  logger.log(`  - Request Timeout: ${appConfig.requestTimeout}ms`);
 }
 
 // Handle uncaught exceptions

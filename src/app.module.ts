@@ -6,9 +6,9 @@ import { plainToClass } from 'class-transformer';
 
 // Import all your configuration files
 import appConfig, { AppConfig } from './config/app.config';
-import databaseConfig, { DatabaseConfig } from './config/database.config';
+import databaseConfig from './config/database.config';
 import kafkaConfig, { KafkaConfig } from './config/kafka.config';
-import redisConfig, { RedisConfig } from './config/redis.config';
+import { redisConfig } from './config/redis.config';
 import swaggerConfig, { SwaggerConfig } from './config/swagger.config';
 
 @Module({
@@ -26,7 +26,7 @@ import swaggerConfig, { SwaggerConfig } from './config/swagger.config';
         swaggerConfig,
       ],
       validate: async (config: Record<string, any>) => {
-        // Validate all configuration objects
+        // Validate only configurations that still have class definitions
         const validationErrors: string[] = [];
 
         // Helper function to handle validation errors
@@ -69,42 +69,9 @@ import swaggerConfig, { SwaggerConfig } from './config/swagger.config';
           validationErrors.push(`App Config: ${error.message}`);
         }
 
-        // Validate Database Config
-        try {
-          const databaseConfigObj = plainToClass(DatabaseConfig, {
-            mongoUrl: config.MONGO_URL,
-            mongoDbName: config.MONGO_DB_NAME,
-            mongoMaxPoolSize: config.MONGO_MAX_POOL_SIZE,
-            mongoMinPoolSize: config.MONGO_MIN_POOL_SIZE,
-            mongoMaxIdleTimeMS: config.MONGO_MAX_IDLE_TIME_MS,
-            mongoServerSelectionTimeoutMS: config.MONGO_SERVER_SELECTION_TIMEOUT_MS,
-            mongoSocketTimeoutMS: config.MONGO_SOCKET_TIMEOUT_MS,
-            mongoConnectTimeoutMS: config.MONGO_CONNECT_TIMEOUT_MS,
-            mongoRetryWrites: config.MONGO_RETRY_WRITES,
-            mongoWriteConcern: config.MONGO_WRITE_CONCERN,
-            mongoReadPreference: config.MONGO_READ_PREFERENCE,
-            mongoBufferCommands: config.MONGO_BUFFER_COMMANDS,
-            mongoBufferMaxEntries: config.MONGO_BUFFER_MAX_ENTRIES,
-            mongoUseNewUrlParser: config.MONGO_USE_NEW_URL_PARSER,
-            mongoUseUnifiedTopology: config.MONGO_USE_UNIFIED_TOPOLOGY,
-            mongoAutoIndex: config.MONGO_AUTO_INDEX,
-            mongoAutoCreate: config.MONGO_AUTO_CREATE,
-            mongoAppName: config.MONGO_APP_NAME,
-            mongoHeartbeatFrequencyMS: config.MONGO_HEARTBEAT_FREQUENCY_MS,
-            mongoMaxStalenessSeconds: config.MONGO_MAX_STALENESS_SECONDS,
-            enableLogging: config.MONGO_ENABLE_LOGGING,
-            logLevel: config.MONGO_LOG_LEVEL,
-            enableMetrics: config.MONGO_ENABLE_METRICS,
-            maxRetries: config.MONGO_MAX_RETRIES,
-            retryDelayMs: config.MONGO_RETRY_DELAY_MS,
-          });
-
-          const dbValidationErrors = await validate(databaseConfigObj);
-          processValidationErrors(dbValidationErrors, 'Database Config');
-        } catch (error) {
-          validationErrors.push(`Database Config: ${error.message}`);
-        }
-
+        // Skip Database Config validation since it's now a plain object
+        // Database connection validation will be handled by the actual MongoDB client
+        
         // Validate Kafka Config
         try {
           const kafkaConfigObj = plainToClass(KafkaConfig, {
@@ -167,45 +134,8 @@ import swaggerConfig, { SwaggerConfig } from './config/swagger.config';
           validationErrors.push(`Kafka Config: ${error.message}`);
         }
 
-        // Validate Redis Config
-        try {
-          const redisConfigObj = plainToClass(RedisConfig, {
-            redisUrl: config.REDIS_URL,
-            host: config.REDIS_HOST,
-            port: config.REDIS_PORT,
-            password: config.REDIS_PASSWORD,
-            username: config.REDIS_USERNAME,
-            db: config.REDIS_DB,
-            connectTimeout: config.REDIS_CONNECT_TIMEOUT,
-            commandTimeout: config.REDIS_COMMAND_TIMEOUT,
-            retryDelayOnFailover: config.REDIS_RETRY_DELAY_FAILOVER,
-            enableReadyCheck: config.REDIS_ENABLE_READY_CHECK,
-            maxRetriesPerRequest: config.REDIS_MAX_RETRIES_PER_REQUEST,
-            lazyConnect: config.REDIS_LAZY_CONNECT,
-            keepAlive: config.REDIS_KEEP_ALIVE,
-            family: config.REDIS_FAMILY,
-            keyPrefix: config.REDIS_KEY_PREFIX,
-            defaultTtl: config.REDIS_DEFAULT_TTL,
-            maxMemoryPolicy: config.REDIS_MAX_MEMORY_POLICY,
-            enableOfflineQueue: config.REDIS_ENABLE_OFFLINE_QUEUE,
-            enableAutoPipelining: config.REDIS_ENABLE_AUTO_PIPELINING,
-            enableLogging: config.REDIS_ENABLE_LOGGING,
-            logLevel: config.REDIS_LOG_LEVEL,
-            enableMetrics: config.REDIS_ENABLE_METRICS,
-            maxMemoryMB: config.REDIS_MAX_MEMORY_MB,
-            healthCheckInterval: config.REDIS_HEALTH_CHECK_INTERVAL,
-            enableHealthCheck: config.REDIS_ENABLE_HEALTH_CHECK,
-            maxConcurrentConnections: config.REDIS_MAX_CONCURRENT_CONNECTIONS,
-            idleTimeout: config.REDIS_IDLE_TIMEOUT,
-            enableCluster: config.REDIS_ENABLE_CLUSTER,
-            clusterNodes: config.REDIS_CLUSTER_NODES,
-          });
-
-          const redisValidationErrors = await validate(redisConfigObj);
-          processValidationErrors(redisValidationErrors, 'Redis Config');
-        } catch (error) {
-          validationErrors.push(`Redis Config: ${error.message}`);
-        }
+        // Skip Redis Config validation since it's now a plain object
+        // Redis connection validation will be handled by the actual Redis client
 
         // Validate Swagger Config
         try {
@@ -289,6 +219,22 @@ import swaggerConfig, { SwaggerConfig } from './config/swagger.config';
         } catch (error) {
           validationErrors.push(`Swagger Config: ${error.message}`);
         }
+
+        // Basic validation for Database and Redis configs (just check if URLs are provided)
+        const basicValidationErrors: string[] = [];
+        
+        // Check if required database URL is provided
+        if (!config.MONGO_URL) {
+          basicValidationErrors.push('Database Config: MONGO_URL is required');
+        }
+        
+        // Check if required Redis URL is provided
+        if (!config.REDIS_URL) {
+          basicValidationErrors.push('Redis Config: REDIS_URL is required');
+        }
+        
+        // Add basic validation errors to the main validation errors
+        validationErrors.push(...basicValidationErrors);
 
         // Throw error if any validation failed
         if (validationErrors.length > 0) {
