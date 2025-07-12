@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { validate } from 'class-validator';
 import { plainToClass } from 'class-transformer';
+import { CloudinaryService } from '../src/modules/cloudinary/cloudinay.service';
 
 // Import all your configuration files
 import appConfig, { AppConfig } from './config/app.config';
@@ -25,6 +26,7 @@ import swaggerConfig, { SwaggerConfig } from './config/swagger.config';
         redisConfig,
         swaggerConfig,
       ],
+
       validate: async (config: Record<string, any>) => {
         // Validate only configurations that still have class definitions
         const validationErrors: string[] = [];
@@ -254,7 +256,7 @@ import swaggerConfig, { SwaggerConfig } from './config/swagger.config';
     // Add your controllers here
   ],
   providers: [
-    // Add your providers here
+   CloudinaryService,
   ],
 })
 export class AppModule {}
