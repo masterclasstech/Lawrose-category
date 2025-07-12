@@ -67,6 +67,7 @@ export class Category {
 
   @Prop({ type: Date, default: Date.now })
   updatedAt: Date;
+
 }
 
 export const CategorySchema = SchemaFactory.createForClass(Category);
