@@ -14,11 +14,6 @@ import { UpdateCategoryDto } from "../categories/dto/update-category.dto";
 import { CategoryQueryDto } from "../categories/dto/category-filter.dto";
 import { CategoryResponseDto } from "../categories/dto/category-response.dto";
 import { CategoryListResponseDto } from "../categories/dto/category-paginated.dto";
-//import { 
-  //BulkUpdateCategoryDto, 
-  //BulkDeleteCategoryDto, 
-  //BulkStatusUpdateDto 
-//} from "../categories/dto/bulk.dto";
 import { 
   CategoryStatsDto, 
   CategoryValidationDto 
