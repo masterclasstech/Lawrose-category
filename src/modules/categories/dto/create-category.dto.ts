@@ -8,134 +8,102 @@ import {
   IsBoolean, 
   IsNumber, 
   IsObject, 
-  IsUrl, 
-  //IsDate,
   MinLength,
   MaxLength,
-  Min,
-  Max,
-  //ValidateNested,
-  IsNotEmpty,
-  Matches,
-  //IsMongoId
 } from 'class-validator';
 //import { Type, Transform } from 'class-transformer';
 import { CategoryStatus } from '../../../common/enums/category-status.enum';
 import { Gender } from '../../../common/enums/gender.enum';
+import { Transform, Type } from 'class-transformer';
 
 // Create Category DTO
 export class CreateCategoryDto {
-  @ApiProperty({
-    description: 'Category name - must be unique',
-    example: 'Electronics & Gadgets',
+  @ApiProperty({ 
+    description: 'Category name', 
+    example: 'Electronics',
     minLength: 2,
     maxLength: 100
   })
   @IsString()
-  @IsNotEmpty()
   @MinLength(2)
   @MaxLength(100)
+  @Transform(({ value }) => value?.trim())
   name: string;
 
-  @ApiProperty({
-    description: 'URL-friendly slug - must be unique, lowercase, no spaces',
-    example: 'electronics-gadgets',
-    pattern: '^[a-z0-9-]+$',
-    minLength: 2,
-    maxLength: 100
-  })
-  @IsString()
-  @IsNotEmpty()
-  @MinLength(2)
-  @MaxLength(100)
-  @Matches(/^[a-z0-9-]+$/, { message: 'Slug must contain only lowercase letters, numbers, and hyphens' })
-  slug: string;
-
-  @ApiPropertyOptional({
-    description: 'Detailed description of the category',
-    example: 'All electronic devices, gadgets, and digital accessories',
-    maxLength: 1000
+  @ApiPropertyOptional({ 
+    description: 'Category description',
+    example: 'Electronic devices and accessories',
+    maxLength: 500
   })
   @IsOptional()
   @IsString()
-  @MaxLength(1000)
+  @MaxLength(500)
+  @Transform(({ value }) => value?.trim())
   description?: string;
 
-  @ApiPropertyOptional({
+  @ApiPropertyOptional({ 
     description: 'Category status',
     enum: CategoryStatus,
-    default: CategoryStatus.ACTIVE,
-    example: CategoryStatus.ACTIVE
+    default: CategoryStatus.ACTIVE
   })
   @IsOptional()
   @IsEnum(CategoryStatus)
   status?: CategoryStatus;
 
-  @ApiPropertyOptional({
-    description: 'Genders this category applies to',
+  @ApiPropertyOptional({ 
+    description: 'Applicable genders',
     enum: Gender,
     isArray: true,
-    example: [Gender.MEN, Gender.WOMEN],
-    default: []
+    example: [Gender.MEN, Gender.WOMEN]
   })
   @IsOptional()
   @IsArray()
   @IsEnum(Gender, { each: true })
   applicableGenders?: Gender[];
 
-  @ApiPropertyOptional({
-    description: 'Whether this category has subcategories',
-    default: false,
-    example: true
+  @ApiPropertyOptional({ 
+    description: 'Has subcategories',
+    default: false
   })
   @IsOptional()
   @IsBoolean()
+  @Type(() => Boolean)
   hasSubcategories?: boolean;
 
-  @ApiPropertyOptional({
-    description: 'Sort order for display (lower numbers appear first)',
-    minimum: 0,
-    maximum: 9999,
-    default: 0,
-    example: 10
+  @ApiPropertyOptional({ 
+    description: 'Sort order',
+    default: 0
   })
   @IsOptional()
   @IsNumber()
-  @Min(0)
-  @Max(9999)
+  @Type(() => Number)
   sortOrder?: number;
 
-  @ApiPropertyOptional({
-    description: 'Additional metadata as key-value pairs',
-    type: 'object',
-    example: { 
-      color: '#007bff',
-      featured: true,
-      priority: 'high',
-      keywords: ['tech', 'digital', 'electronic']
-    },
-    additionalProperties: true
+  @ApiPropertyOptional({ 
+    description: 'Additional metadata',
+    example: { featured: true, priority: 1 }
   })
   @IsOptional()
   @IsObject()
   metadata?: Record<string, any>;
 
-  @ApiPropertyOptional({
-    description: 'URL to category image (must be valid HTTP/HTTPS URL)',
-    example: 'https://example.com/images/electronics-category.jpg',
-    format: 'uri'
-  })
-  @IsOptional()
-  @IsUrl({}, { message: 'Image URL must be a valid HTTP/HTTPS URL' })
-  imageUrl?: string;
-
-  @ApiPropertyOptional({
-    description: 'Icon identifier or CSS class name',
-    example: 'fas fa-laptop',
-    maxLength: 100
+  @ApiPropertyOptional({ 
+    description: 'Category icon',
+    example: 'electronics-icon'
   })
   @IsOptional()
   @IsString()
-  @MaxLength(100)
   icon?: string;
+
+  // Note: imageUrl will be handled by the service after file upload
+  // The actual file upload will be handled via multipart form data
+}
+
+export class CreateCategoryWithFileDto extends CreateCategoryDto {
+  @ApiPropertyOptional({ 
+    description: 'Category image file',
+    type: 'string',
+    format: 'binary'
+  })
+  image?: Express.Multer.File;
 }
