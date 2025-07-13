@@ -5,7 +5,8 @@ import { CacheModule } from '@nestjs/cache-manager';
 import { Category, CategorySchema } from './schemas/category.schema';
 import { CategoriesController } from './categories.controller';
 import { CategoriesService } from './categories.service';
-//import { CategoriesRepository } from './categories.repository';
+import { CategoriesRepository } from './categories.repository';
+import { CloudinaryService } from '../cloudinary/cloudinary.service';
 //import { CategoriesKafkaController } from './categories-kafka.controller';
 
 @Module({
@@ -24,11 +25,12 @@ import { CategoriesService } from './categories.service';
   ],
   providers: [
     CategoriesService,
-    //CategoriesRepository
+    CategoriesRepository,
+    CloudinaryService
   ],
   exports: [
     CategoriesService,
-    //CategoriesRepository
+    CategoriesRepository
   ]
 })
 export class CategoriesModule {}

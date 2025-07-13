@@ -1,9 +1,10 @@
 /* eslint-disable prettier/prettier */
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { MongooseModule } from '@nestjs/mongoose';
 import { validate } from 'class-validator';
 import { plainToClass } from 'class-transformer';
-import { CloudinaryService } from '../src/modules/cloudinary/cloudinay.service';
+import { CloudinaryService } from './modules/cloudinary/cloudinary.service';
 
 // Import all your configuration files
 import appConfig, { AppConfig } from './config/app.config';
@@ -11,6 +12,8 @@ import databaseConfig from './config/database.config';
 import kafkaConfig, { KafkaConfig } from './config/kafka.config';
 import { redisConfig } from './config/redis.config';
 import swaggerConfig, { SwaggerConfig } from './config/swagger.config';
+import { CategoriesModule } from './modules/categories/categories.module';
+import { CacheService } from './modules/cache/cache.service';
 
 @Module({
   imports: [
@@ -246,17 +249,48 @@ import swaggerConfig, { SwaggerConfig } from './config/swagger.config';
         return config;
       },
     }),
+
+    // ADD THIS: MongoDB connection setup
+    MongooseModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: async (configService: ConfigService) => {
+        const databaseConfig = configService.get('database');
+        
+        return {
+          uri: databaseConfig.mongoUrl,
+          dbName: databaseConfig.mongoDbName,
+          maxPoolSize: databaseConfig.mongoMaxPoolSize,
+          minPoolSize: databaseConfig.mongoMinPoolSize,
+          maxIdleTimeMS: databaseConfig.mongoMaxIdleTimeMS,
+          serverSelectionTimeoutMS: databaseConfig.mongoServerSelectionTimeoutMS,
+          socketTimeoutMS: databaseConfig.mongoSocketTimeoutMS,
+          connectTimeoutMS: databaseConfig.mongoConnectTimeoutMS,
+          retryWrites: databaseConfig.mongoRetryWrites,
+          writeConcern: databaseConfig.mongoWriteConcern,
+          readPreference: databaseConfig.mongoReadPreference,
+          bufferCommands: databaseConfig.mongoBufferCommands,
+          bufferMaxEntries: databaseConfig.mongoBufferMaxEntries,
+          appName: databaseConfig.mongoAppName,
+          heartbeatFrequencyMS: databaseConfig.mongoHeartbeatFrequencyMS,
+          maxStalenessSeconds: databaseConfig.mongoMaxStalenessSeconds,
+          autoIndex: databaseConfig.mongoAutoIndex,
+          autoCreate: databaseConfig.mongoAutoCreate,
+        };
+      },
+    }),
     
     // Add your other modules here
-    // CategoryModule,
+    CategoriesModule,
     // SubcategoryModule,
     // ... other modules
   ],
   controllers: [
-    // Add your controllers here
+    
   ],
   providers: [
    CloudinaryService,
+   CacheService,
   ],
 })
 export class AppModule {}

@@ -24,7 +24,7 @@ import { Gender } from '../../common/enums/gender.enum';
 import { generateCacheKey } from '../../common/utils/cache-key.util';
 import { CACHE_KEYS } from '../../common/constants/cache-keys.constants';
 import { Types } from 'mongoose';
-import { CloudinaryService } from '../cloudinary/cloudinay.service';
+import { CloudinaryService } from '../cloudinary/cloudinary.service';
 
 @Injectable()
 export class CategoriesService {

@@ -2,35 +2,63 @@
 import { registerAs } from '@nestjs/config';
 import { Logger } from '@nestjs/common';
 
-export default registerAs('database', () => {
+export interface DatabaseConfig {
+  mongoUrl: string;
+  mongoDbName?: string;
+  mongoMaxPoolSize: number;
+  mongoMinPoolSize: number;
+  mongoMaxIdleTimeMS: number;
+  mongoServerSelectionTimeoutMS: number;
+  mongoSocketTimeoutMS: number;
+  mongoConnectTimeoutMS: number;
+  mongoRetryWrites: boolean;
+  mongoWriteConcern: string;
+  mongoReadPreference: string;
+  mongoBufferCommands: boolean;
+  mongoBufferMaxEntries: number;
+  mongoUseNewUrlParser: boolean;
+  mongoUseUnifiedTopology: boolean;
+  mongoAutoIndex: boolean;
+  mongoAutoCreate: boolean;
+  mongoAppName: string;
+  mongoHeartbeatFrequencyMS: number;
+  mongoMaxStalenessSeconds: number;
+  enableLogging: boolean;
+  logLevel: string;
+  enableMetrics: boolean;
+  maxRetries: number;
+  retryDelayMs: number;
+}
+
+export default registerAs('database', (): DatabaseConfig => {
   const logger = new Logger('DatabaseConfig');
   
-  const config = {
+  const config: DatabaseConfig = {
     mongoUrl: process.env.MONGO_URL || '',
-    mongoDbName: undefined as string | undefined,
-    mongoMaxPoolSize: 10,
-    mongoMinPoolSize: 5,
-    mongoMaxIdleTimeMS: 30000,
-    mongoServerSelectionTimeoutMS: 5000,
-    mongoSocketTimeoutMS: 45000,
-    mongoConnectTimeoutMS: 10000,
-    mongoRetryWrites: true,
-    mongoWriteConcern: 'majority',
-    mongoReadPreference: 'primary',
-    mongoBufferCommands: true,
-    mongoBufferMaxEntries: 0,
+    mongoDbName: undefined,
+    mongoMaxPoolSize: parseInt(process.env.MONGO_MAX_POOL_SIZE || '10', 10),
+    mongoMinPoolSize: parseInt(process.env.MONGO_MIN_POOL_SIZE || '5', 10),
+    mongoMaxIdleTimeMS: parseInt(process.env.MONGO_MAX_IDLE_TIME_MS || '30000', 10),
+    mongoServerSelectionTimeoutMS: parseInt(process.env.MONGO_SERVER_SELECTION_TIMEOUT_MS || '5000', 10),
+    mongoSocketTimeoutMS: parseInt(process.env.MONGO_SOCKET_TIMEOUT_MS || '45000', 10),
+    mongoConnectTimeoutMS: parseInt(process.env.MONGO_CONNECT_TIMEOUT_MS || '10000', 10),
+    mongoRetryWrites: process.env.MONGO_RETRY_WRITES !== 'false',
+    mongoWriteConcern: process.env.MONGO_WRITE_CONCERN || 'majority',
+    mongoReadPreference: process.env.MONGO_READ_PREFERENCE || 'primary',
+    mongoBufferCommands: process.env.MONGO_BUFFER_COMMANDS !== 'false',
+    mongoBufferMaxEntries: parseInt(process.env.MONGO_BUFFER_MAX_ENTRIES || '0', 10),
     mongoUseNewUrlParser: true,
     mongoUseUnifiedTopology: true,
-    mongoAutoIndex: true,
-    mongoAutoCreate: true,
-    mongoAppName: 'category-service',
-    mongoHeartbeatFrequencyMS: 10000,
-    mongoMaxStalenessSeconds: 90,
-    enableLogging: false,
-    logLevel: 'info',
-    enableMetrics: true,
-    maxRetries: 3,
-    retryDelayMs: 1000
+    mongoAutoIndex: process.env.MONGO_AUTO_INDEX !== 'false',
+    mongoAutoCreate: process.env.MONGO_AUTO_CREATE !== 'false',
+    mongoAppName: process.env.MONGO_APP_NAME || 'category-service',
+    mongoHeartbeatFrequencyMS: parseInt(process.env.MONGO_HEARTBEAT_FREQUENCY_MS || '10000', 10),
+    mongoMaxStalenessSeconds: parseInt(process.env.MONGO_MAX_STALENESS_SECONDS || '90', 10),
+    enableLogging: process.env.MONGO_ENABLE_LOGGING === 'true',
+    logLevel: process.env.MONGO_LOG_LEVEL || 'info',
+    enableMetrics: process.env.MONGO_ENABLE_METRICS !== 'false',
+    maxRetries: parseInt(process.env.MONGO_MAX_RETRIES || '3', 10),
+    retryDelayMs: parseInt(process.env.MONGO_RETRY_DELAY_MS || '1000', 10)
   };
   
   // Log configuration loading
@@ -48,31 +76,9 @@ export default registerAs('database', () => {
     } catch (error) {
       logger.error('Failed to parse MONGO_URL for database name extraction', error);
     }
-  } else {
+  } else if (process.env.MONGO_DB_NAME) {
     config.mongoDbName = process.env.MONGO_DB_NAME;
-    if (config.mongoDbName) {
-      logger.log(`Database name set from environment: ${config.mongoDbName}`);
-    }
-  }
-
-  // Override defaults only if provided and valid
-  if (process.env.MONGO_MAX_POOL_SIZE && !isNaN(Number(process.env.MONGO_MAX_POOL_SIZE))) {
-    config.mongoMaxPoolSize = parseInt(process.env.MONGO_MAX_POOL_SIZE, 10);
-  }
-  if (process.env.MONGO_MIN_POOL_SIZE && !isNaN(Number(process.env.MONGO_MIN_POOL_SIZE))) {
-    config.mongoMinPoolSize = parseInt(process.env.MONGO_MIN_POOL_SIZE, 10);
-  }
-  if (process.env.MONGO_SERVER_SELECTION_TIMEOUT_MS && !isNaN(Number(process.env.MONGO_SERVER_SELECTION_TIMEOUT_MS))) {
-    config.mongoServerSelectionTimeoutMS = parseInt(process.env.MONGO_SERVER_SELECTION_TIMEOUT_MS, 10);
-  }
-  if (process.env.MONGO_ENABLE_LOGGING === 'true') {
-    config.enableLogging = true;
-  }
-  if (process.env.MONGO_LOG_LEVEL) {
-    config.logLevel = process.env.MONGO_LOG_LEVEL;
-  }
-  if (process.env.MONGO_MAX_RETRIES && !isNaN(Number(process.env.MONGO_MAX_RETRIES))) {
-    config.maxRetries = parseInt(process.env.MONGO_MAX_RETRIES, 10);
+    logger.log(`Database name set from environment: ${config.mongoDbName}`);
   }
 
   // Log final configuration (without sensitive data)
@@ -103,7 +109,7 @@ export class DatabaseConnectionService {
     });
 
     mongooseConnection.on('disconnected', () => {
-      this.logger.warn('🔌 Database disconnected');
+      this.logger.warn('Database disconnected');
     });
 
     mongooseConnection.on('error', (error: Error) => {
