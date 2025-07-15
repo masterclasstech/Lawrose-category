@@ -250,32 +250,27 @@ import { CacheService } from './modules/cache/cache.service';
       },
     }),
 
-    // ADD THIS: MongoDB connection setup
+    // MongoDB connection setup - FIXED
+    // In your app.module.ts - Update the MongooseModule.forRootAsync section:
+
+    // Minimal MongooseModule configuration for Atlas
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: async (configService: ConfigService) => {
         const databaseConfig = configService.get('database');
-        
+    
         return {
           uri: databaseConfig.mongoUrl,
           dbName: databaseConfig.mongoDbName,
-          maxPoolSize: databaseConfig.mongoMaxPoolSize,
-          minPoolSize: databaseConfig.mongoMinPoolSize,
-          maxIdleTimeMS: databaseConfig.mongoMaxIdleTimeMS,
-          serverSelectionTimeoutMS: databaseConfig.mongoServerSelectionTimeoutMS,
-          socketTimeoutMS: databaseConfig.mongoSocketTimeoutMS,
-          connectTimeoutMS: databaseConfig.mongoConnectTimeoutMS,
-          retryWrites: databaseConfig.mongoRetryWrites,
-          writeConcern: databaseConfig.mongoWriteConcern,
-          readPreference: databaseConfig.mongoReadPreference,
-          bufferCommands: databaseConfig.mongoBufferCommands,
-          bufferMaxEntries: databaseConfig.mongoBufferMaxEntries,
-          appName: databaseConfig.mongoAppName,
-          heartbeatFrequencyMS: databaseConfig.mongoHeartbeatFrequencyMS,
-          maxStalenessSeconds: databaseConfig.mongoMaxStalenessSeconds,
-          autoIndex: databaseConfig.mongoAutoIndex,
-          autoCreate: databaseConfig.mongoAutoCreate,
+          maxPoolSize: databaseConfig.maxPoolSize,
+          serverSelectionTimeoutMS: databaseConfig.serverSelectionTimeoutMS,
+          socketTimeoutMS: databaseConfig.socketTimeoutMS,
+          connectTimeoutMS: databaseConfig.connectTimeoutMS,
+          retryWrites: databaseConfig.retryWrites,
+          appName: databaseConfig.appName,
+          autoIndex: databaseConfig.autoIndex,
+          autoCreate: databaseConfig.autoCreate,
         };
       },
     }),

@@ -7,7 +7,9 @@ import { CategoriesController } from './categories.controller';
 import { CategoriesService } from './categories.service';
 import { CategoriesRepository } from './categories.repository';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
+import { CacheService } from '../cache/cache.service';
 //import { CategoriesKafkaController } from './categories-kafka.controller';
+
 
 @Module({
   imports: [
@@ -26,7 +28,8 @@ import { CloudinaryService } from '../cloudinary/cloudinary.service';
   providers: [
     CategoriesService,
     CategoriesRepository,
-    CloudinaryService
+    CloudinaryService,
+    CacheService
   ],
   exports: [
     CategoriesService,
