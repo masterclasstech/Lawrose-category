@@ -1,6 +1,6 @@
 /* eslint-disable prettier/prettier */
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe, Logger, VersioningType } from '@nestjs/common';
+import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
@@ -62,16 +62,7 @@ async function bootstrap() {
     app.use(json({ limit: maxFileSize }));
     app.use(urlencoded({ extended: true, limit: maxFileSize }));
 
-    // Global prefix
-    app.setGlobalPrefix(appConfig.apiPrefix);
-
-    // API versioning
-    app.enableVersioning({
-      type: VersioningType.URI,
-      defaultVersion: '1',
-    });
-
-    // CORS configuration
+    // CORS configuration (setup before global prefix)
     if (appConfig.enableCors) {
       app.enableCors({
         origin: appConfig.allowedOrigins,
@@ -149,7 +140,12 @@ async function bootstrap() {
       new TransformInterceptor(reflector),
     );
 
-    // Health check endpoints
+    // Set global prefix for API routes - this should be applied to all controllers
+    // Make sure the prefix doesn't have leading/trailing slashes
+    const globalPrefix = appConfig.apiPrefix.replace(/^\/+|\/+$/g, '');
+    app.setGlobalPrefix(globalPrefix);
+
+    // Health check endpoints (these should be outside the global prefix)
     setupHealthEndpoints(app, appConfig, configService, logger);
 
     // Kafka microservice setup
@@ -168,7 +164,7 @@ async function bootstrap() {
     }
 
     // Start HTTP server
-    await app.listen(appConfig.port);
+    await app.listen(appConfig.port, '0.0.0.0'); // Listen on all interfaces for Docker
     
     logApplicationStartup(appConfig, swaggerConfig, logger, configService);
 
@@ -180,7 +176,9 @@ async function bootstrap() {
 
 function setupHealthEndpoints(app: any, appConfig: AppConfig, configService: any, logger: Logger) {
   const httpAdapter = app.getHttpAdapter();
-  const healthEndpoint = `${appConfig.apiPrefix}/health`;
+  
+  // Health check endpoint with global prefix
+  const healthEndpoint = `/${appConfig.apiPrefix.replace(/^\/+|\/+$/g, '')}/health`;
   
   // Comprehensive health check endpoint
   httpAdapter.get(healthEndpoint, async (req, res) => {
@@ -198,6 +196,12 @@ function setupHealthEndpoints(app: any, appConfig: AppConfig, configService: any
           total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024),
           external: Math.round(process.memoryUsage().external / 1024 / 1024),
         },
+        endpoints: {
+          categories: `/${appConfig.apiPrefix.replace(/^\/+|\/+$/g, '')}/categories`,
+          subcategories: `/${appConfig.apiPrefix.replace(/^\/+|\/+$/g, '')}/subcategories`,
+          collections: `/${appConfig.apiPrefix.replace(/^\/+|\/+$/g, '')}/collections`,
+          gender: `/${appConfig.apiPrefix.replace(/^\/+|\/+$/g, '')}/gender`,
+        },
         dependencies: {
           database: 'unknown',
           redis: 'unknown',
@@ -207,6 +211,7 @@ function setupHealthEndpoints(app: any, appConfig: AppConfig, configService: any
           cors: appConfig.enableCors,
           kafka: appConfig.enableKafka,
           swagger: appConfig.shouldEnableSwagger,
+          microservice: true,
         },
       };
 
@@ -261,13 +266,34 @@ function setupHealthEndpoints(app: any, appConfig: AppConfig, configService: any
     }
   });
 
-  // Simple health check endpoint
+  // Simple health check endpoint (without global prefix for load balancers)
   httpAdapter.get('/health', async (req, res) => {
     res.status(200).json({
       status: 'ok',
       timestamp: new Date().toISOString(),
       service: appConfig.appName,
       version: appConfig.appVersion,
+      microservice: true,
+    });
+  });
+
+  // Root endpoint to show available routes
+  httpAdapter.get('/', async (req, res) => {
+    res.status(200).json({
+      service: appConfig.appName,
+      version: appConfig.appVersion,
+      environment: appConfig.nodeEnv,
+      apiPrefix: appConfig.apiPrefix,
+      availableEndpoints: {
+        health: '/health',
+        apiHealth: healthEndpoint,
+        categories: `/${appConfig.apiPrefix.replace(/^\/+|\/+$/g, '')}/categories`,
+        subcategories: `/${appConfig.apiPrefix.replace(/^\/+|\/+$/g, '')}/subcategories`,
+        collections: `/${appConfig.apiPrefix.replace(/^\/+|\/+$/g, '')}/collections`,
+        gender: `/${appConfig.apiPrefix.replace(/^\/+|\/+$/g, '')}/gender`,
+        swagger: appConfig.shouldEnableSwagger ? '/api-docs' : null,
+      },
+      timestamp: new Date().toISOString(),
     });
   });
 }
@@ -342,7 +368,20 @@ function setupSwaggerDocumentation(app: any, appConfig: AppConfig, swaggerConfig
     documentBuilder.addServer(server);
   });
 
-  // Add tags
+  // Add tags for microservice endpoints
+  const microserviceTags = [
+    { name: 'Categories', description: 'Category management endpoints' },
+    { name: 'Subcategories', description: 'Subcategory management endpoints' },
+    { name: 'Collections', description: 'Collection management endpoints' },
+    { name: 'Gender', description: 'Gender management endpoints' },
+    { name: 'Health', description: 'Health check endpoints' },
+  ];
+
+  microserviceTags.forEach(tag => {
+    documentBuilder.addTag(tag.name, tag.description);
+  });
+
+  // Add existing tags
   swaggerConfig.tags?.forEach(tag => {
     documentBuilder.addTag(tag);
   });
@@ -399,11 +438,14 @@ function setupSwaggerDocumentation(app: any, appConfig: AppConfig, swaggerConfig
 }
 
 function addHealthCheckToSwagger(document: any, appConfig: AppConfig) {
-  document.paths['/health'] = {
+  // Add health check endpoints to Swagger documentation
+  const healthEndpoint = `/${appConfig.apiPrefix.replace(/^\/+|\/+$/g, '')}/health`;
+  
+  document.paths[healthEndpoint] = {
     get: {
       tags: ['Health'],
-      summary: 'Health Check',
-      description: 'Check the health status of the service',
+      summary: 'Comprehensive Health Check',
+      description: 'Check the health status of the microservice with detailed information',
       responses: {
         '200': {
           description: 'Service is healthy',
@@ -426,6 +468,15 @@ function addHealthCheckToSwagger(document: any, appConfig: AppConfig) {
                       external: { type: 'number', example: 10 },
                     },
                   },
+                  endpoints: {
+                    type: 'object',
+                    properties: {
+                      categories: { type: 'string', example: '/api/categories' },
+                      subcategories: { type: 'string', example: '/api/subcategories' },
+                      collections: { type: 'string', example: '/api/collections' },
+                      gender: { type: 'string', example: '/api/gender' },
+                    },
+                  },
                   dependencies: {
                     type: 'object',
                     properties: {
@@ -440,6 +491,7 @@ function addHealthCheckToSwagger(document: any, appConfig: AppConfig) {
                       cors: { type: 'boolean', example: appConfig.enableCors },
                       kafka: { type: 'boolean', example: appConfig.enableKafka },
                       swagger: { type: 'boolean', example: appConfig.shouldEnableSwagger },
+                      microservice: { type: 'boolean', example: true },
                     },
                   },
                   responseTime: { type: 'string', example: '5ms' },
@@ -489,10 +541,19 @@ function setupGracefulShutdown(app: any, logger: Logger) {
 }
 
 function logApplicationStartup(appConfig: AppConfig, swaggerConfig: any, logger: Logger, configService: ConfigService) {
-  logger.log(`${appConfig.appName} v${appConfig.appVersion} is running on: http://localhost:${appConfig.port}${appConfig.apiPrefix}`);
+  const cleanPrefix = appConfig.apiPrefix.replace(/^\/+|\/+$/g, '');
+  
+  logger.log(`${appConfig.appName} v${appConfig.appVersion} is running on: http://localhost:${appConfig.port}`);
+  logger.log(`Microservice Mode: ENABLED`);
   logger.log(`Environment: ${appConfig.nodeEnv}`);
-  logger.log(`Health Check: http://localhost:${appConfig.port}${appConfig.apiPrefix}/health`);
-  logger.log(`Simple Health Check: http://localhost:${appConfig.port}/health`);
+  logger.log(`Available Endpoints:`);
+  logger.log(`  - Root: http://localhost:${appConfig.port}/`);
+  logger.log(`  - Health: http://localhost:${appConfig.port}/health`);
+  logger.log(`  - API Health: http://localhost:${appConfig.port}/${cleanPrefix}/health`);
+  logger.log(`  - Categories: http://localhost:${appConfig.port}/${cleanPrefix}/categories`);
+  logger.log(`  - Subcategories: http://localhost:${appConfig.port}/${cleanPrefix}/subcategories`);
+  logger.log(`  - Collections: http://localhost:${appConfig.port}/${cleanPrefix}/collections`);
+  logger.log(`  - Gender: http://localhost:${appConfig.port}/${cleanPrefix}/gender`);
   
   if (appConfig.shouldEnableSwagger && swaggerConfig) {
     logger.log(`API Documentation: http://localhost:${appConfig.port}/${swaggerConfig.path}`);
@@ -501,18 +562,20 @@ function logApplicationStartup(appConfig: AppConfig, swaggerConfig: any, logger:
   if (appConfig.enableKafka) {
     const kafkaConfig = configService.get('kafka');
     if (kafkaConfig?.enabled && appConfig.logKafkaConnection) {
-      logger.log(`📡 Kafka Client ID: ${kafkaConfig.clientId}`);
-      logger.log(`🔌 Kafka Brokers: ${kafkaConfig.brokers.join(', ')}`);
+      logger.log(`Kafka Client ID: ${kafkaConfig.clientId}`);
+      logger.log(`Kafka Brokers: ${kafkaConfig.brokers.join(', ')}`);
     }
   }
 
   // Configuration summary
-  logger.log(`🔧 Configuration Summary:`);
+  logger.log(`Configuration Summary:`);
+  logger.log(`  - API Prefix: /${cleanPrefix}`);
   logger.log(`  - CORS: ${appConfig.enableCors ? 'Enabled' : 'Disabled'}`);
   logger.log(`  - Kafka: ${appConfig.enableKafka ? 'Enabled' : 'Disabled'}`);
   logger.log(`  - Swagger: ${appConfig.shouldEnableSwagger ? 'Enabled' : 'Disabled'}`);
   logger.log(`  - Max File Size: ${Math.round(appConfig.maxFileSize / 1024 / 1024)}MB`);
   logger.log(`  - Request Timeout: ${appConfig.requestTimeout}ms`);
+  logger.log(`  - Microservice: Ready for inter-service communication`);
 }
 
 // Handle uncaught exceptions
